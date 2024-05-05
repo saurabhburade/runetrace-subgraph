@@ -1,0 +1,84 @@
+type Utxo @entity {
+  id: ID!
+  address: String
+  amount: BigInt!
+  ordinalsSlug: Bytes!
+  unspent: Boolean!
+
+  transaction: Transaction!
+  spentIn: Transaction
+
+  inscriptions: [Inscription!]! @derivedFrom(field: "location")
+}
+
+type Inscription @entity {
+  id: ID!
+  content_type: String
+  parent: String
+  metadata: String
+  metaprotocol: String
+  contentEncoding: String
+  content: String!
+  contentLength: BigInt!
+  offset: BigInt!
+
+  genesisAddress: String!
+  genesisTransaction: Transaction!
+  genesisUtxo: Utxo!
+  genesisOffset: BigInt!
+
+  ordinal: BigInt!
+
+  # UTXO in which the inscription is currently held
+  location: Utxo!
+  # Offset of the inscription in the current UTXO in which it is held
+  locationOffset: BigInt!
+}
+
+type Transaction @entity {
+  id: ID!
+  # Index of the transaction in its block
+  idx: BigInt!
+  # Total amount transferred (in sats)
+  amount: BigInt!
+  # Fee paid (in sats)
+  fee: BigInt!
+  inputUtxos: [Utxo!]! @derivedFrom(field: "spentIn")
+  outputUtxos: [Utxo!]! @derivedFrom(field: "transaction")
+  # inscriptions: [Bytes!]!
+  block: Block!
+}
+
+type Block @entity {
+  # Block height as string
+  id: ID!
+  # Block height
+  height: BigInt!
+  # Block timestamp
+  timestamp: BigInt!
+  # Total miner reward (in sats)
+  reward: BigInt!
+  # Block subsidy (in sats)
+  subsidy: BigInt!
+  # Miner fees (in sats)
+  fees: BigInt!
+
+  transactions: [Transaction!]! @derivedFrom(field: "block")
+}
+
+# type Runestone @entity {
+#   id: ID!
+#   name: String
+#   symbol: String
+#   transactions: [Transaction!]
+#   divisibility: BigDecimal
+#   premine: BigDecimal
+#   spacers: BigDecimal
+#   turbo: Boolean
+#   supply: BigDecimal
+#   termCap: BigDecimal
+#   termAmount: BigDecimal
+#   runeId: String
+#   pointer: String
+#   itchTx: Transaction
+# }

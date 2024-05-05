@@ -1,0 +1,28 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: substreams
+    name: Ordinals
+    network: btc
+    source:
+      package:
+        moduleName: map_ordinals
+        file: ../substreams/bitcoin-ordinals-v0.1.0.spkg
+    mapping:
+      apiVersion: 0.0.6
+      kind: substreams/graph-entities
+      file: ./src/mapping.ts
+      handler: handleBlock
+  # - kind: substreams
+  #   name: Runes
+  #   network: btc
+  #   source:
+  #     package:
+  #       moduleName: map_runes
+  #       file: ../substreams/bitcoin-ordinals-v0.1.0.spkg
+  #   mapping:
+  #     apiVersion: 0.0.6
+  #     kind: substreams/graph-entities
+  #     file: ./src/mapping.ts
+  #     handler: handleRunes
