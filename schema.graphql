@@ -34,6 +34,40 @@ type Inscription @entity {
   # Offset of the inscription in the current UTXO in which it is held
   locationOffset: BigInt!
 }
+# type RunestoneBuf {
+
+#   edicts: [Edict!]
+#   etching: Etching
+#   mint: RuneId
+#   pointer: String
+# }
+# type Etching {
+#   divisibility: Int
+#   premine: String
+#   rune: String
+#   spacers: String
+#   symbol: String
+#   turbo: Boolean
+#   supply: String
+#   terms: Terms
+#   id: RuneId
+# }
+
+# type Terms {
+#   cap: String
+#   amount: String
+# }
+
+# type Edict {
+#   id: RuneId!
+#   amount: String!
+#   output: String!
+# }
+
+# type RuneId {
+#   block: String!
+#   tx: String!
+# }
 
 type Transaction @entity {
   id: ID!
@@ -47,6 +81,7 @@ type Transaction @entity {
   outputUtxos: [Utxo!]! @derivedFrom(field: "transaction")
   # inscriptions: [Bytes!]!
   block: Block!
+  rune: RunestoneTransaction
 }
 
 type Block @entity {
@@ -62,23 +97,84 @@ type Block @entity {
   subsidy: BigInt!
   # Miner fees (in sats)
   fees: BigInt!
-
+  runesTxCount: BigInt
+  runesEdictsTxCount: BigInt
+  runesMintsTxCount: BigInt
+  runesPointerTxCount: BigInt
   transactions: [Transaction!]! @derivedFrom(field: "block")
 }
+type RunestoneTransaction @entity {
+  id: ID!
+  rune: Runestone
+  type: String
+  edicts: [Edict!]
+  pointer: String
+  mint: String
+  transaction: Transaction
+}
+type Edict @entity {
+  id: ID!
+  runeID: String!
+  amount: String!
+  output: String!
+  rune: Runestone
+}
 
-# type Runestone @entity {
-#   id: ID!
-#   name: String
-#   symbol: String
-#   transactions: [Transaction!]
-#   divisibility: BigDecimal
-#   premine: BigDecimal
-#   spacers: BigDecimal
-#   turbo: Boolean
-#   supply: BigDecimal
-#   termCap: BigDecimal
-#   termAmount: BigDecimal
-#   runeId: String
-#   pointer: String
-#   itchTx: Transaction
-# }
+type Runestone @entity {
+  id: ID!
+  name: String
+  symbol: String
+  transactions: [Transaction!]
+  divisibility: BigDecimal
+  premine: BigDecimal
+  spacers: BigDecimal
+  turbo: Boolean
+  supply: BigDecimal
+  termCap: BigDecimal
+  termAmount: BigDecimal
+  runeId: String
+  pointer: String
+  etchTx: Transaction
+  mintTxCount: BigInt
+  edictTxCount: BigInt
+  pointerTxCount: BigInt
+  totalFeeSpent: BigDecimal
+  totalTxCount: BigInt
+  creator: String
+}
+type RunestoneDayData @entity {
+  id: ID!
+  date: BigInt!
+  prevDate: BigInt!
+  lastBlock: BigInt!
+  volume: BigDecimal
+  fees: BigDecimal
+  txCount: BigInt
+  edictsTxCount: BigInt
+  mintsTxCount: BigInt
+  pointerTxCount: BigInt
+  rune: Runestone
+}
+type AllRuneDayData @entity {
+  id: ID!
+  date: BigInt!
+  prevDate: BigInt!
+  lastBlock: BigInt!
+  fees: BigDecimal
+  txCount: BigInt
+  etchingTxCount: BigInt
+  edictsTxCount: BigInt
+  mintsTxCount: BigInt
+  pointerTxCount: BigInt
+}
+type AllRuneData @entity {
+  id: ID!
+  lastBlock: BigInt!
+  fees: BigDecimal
+  txCount: BigInt
+  etchingTxCount: BigInt
+
+  edictsTxCount: BigInt
+  mintsTxCount: BigInt
+  pointerTxCount: BigInt
+}

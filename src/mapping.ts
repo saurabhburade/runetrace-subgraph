@@ -74,7 +74,8 @@ export function handleBlock(blockBytes: Uint8Array): void {
 
   let fees_ordinals = new OrdinalSet([]);
   for (let i = 1; i < block.txs.length; ++i) {
-    handleRegularTransaction(block_, block.txs[i]);
+    fees_ordinals.append_set(handleRegularTransaction(block_, block.txs[i]));
+    // handleRegularTransaction(block_, block.txs[i]);
   }
   // for (let i = 1; i < block.runestones.length; ++i) {
   //   let runestone = block.runestones[i];
@@ -93,7 +94,7 @@ export function handleBlock(blockBytes: Uint8Array): void {
   //     }
   //   }
   // }
-  // handleCoinbaseTransaction(block_, block.txs[0], fees_ordinals);
+  handleCoinbaseTransaction(block_, block.txs[0], fees_ordinals);
 }
 
 function loadUTXOs(ids: string[]): Utxo[] {
@@ -135,97 +136,126 @@ function getNthSatUtxo(utxos: Utxo[], n: u64): Utxo {
 function handleRegularTransaction(
   block: Block,
   transaction: ProtoTransaction
-): void {
+): OrdinalSet {
   log.debug("Processing regular transaction {}", [transaction.txid]);
+
+  // Load input UTXOs and ordinals
+  // log.debug("Loading input UTXOs", [])
+  let input_utxos = loadUTXOs(transaction.inputUtxos);
+  let input_ordinals: OrdinalSet = new OrdinalSet([]);
+  for (let i = 0; i < input_utxos.length; ++i) {
+    let blocks = OrdinalSet.deserialize(input_utxos[i].ordinalsSlug);
+    input_ordinals.append_set(blocks);
+
+    // Mark UTXO as spent
+    input_utxos[i].unspent = false;
+    input_utxos[i].spentIn = transaction.txid;
+    input_utxos[i].save();
+  }
+
+  // Handle inscriptions
+  // log.debug("Loading inscriptions", [])
+  let inscriptions: Inscription[] = loadInscriptions(input_utxos);
+  for (let insc = 0; insc < transaction.inscriptions.length; ++insc) {
+    let inscription = new Inscription(transaction.inscriptions[insc].id);
+    inscription.content_type = transaction.inscriptions[insc].contentType;
+    inscription.offset = BigInt.fromI64(transaction.inscriptions[insc].pointer);
+    inscription.parent = transaction.inscriptions[insc].parent;
+    inscription.metadata = transaction.inscriptions[insc].metadata;
+    inscription.metaprotocol = transaction.inscriptions[insc].metaprotocol;
+    inscription.contentEncoding =
+      transaction.inscriptions[insc].contentEncoding;
+    inscription.content = transaction.inscriptions[insc].content;
+    inscription.genesisTransaction = transaction.txid;
+    inscription.genesisAddress = transaction.relativeOrdinals[0].address;
+    inscription.ordinal = BigInt.fromU64(
+      input_ordinals.getNthOrdinal(transaction.inscriptions[insc].pointer)
+    );
+    inscription.genesisUtxo = getNthSatUtxo(
+      input_utxos,
+      transaction.inscriptions[insc].pointer
+    ).id;
+    inscriptions.push(inscription);
+  }
+
+  // Assign ordinals to output UTXOs
+  // log.debug("Assigning ordinals to output UTXOs", [])
+  for (let i = 0; i < transaction.relativeOrdinals.length; ++i) {
+    let utxo = new Utxo(transaction.relativeOrdinals[i].utxo);
+    utxo.address = transaction.relativeOrdinals[i].address;
+    utxo.amount = BigInt.fromU64(transaction.relativeOrdinals[i].size);
+    utxo.unspent = true;
+    utxo.transaction = transaction.txid;
+
+    let utxo_ordinals = input_ordinals.popNOrdinals(
+      transaction.relativeOrdinals[i].size
+    );
+    // Assign inscriptions to UTXO
+    for (let j = 0; j < inscriptions.length; ++j) {
+      if (utxo_ordinals.contains(inscriptions[j].ordinal.toU64())) {
+        inscriptions[j].location = utxo.id;
+        inscriptions[j].locationOffset = BigInt.fromU64(
+          utxo_ordinals.offsetOf(inscriptions[j].ordinal.toU64())
+        );
+        inscriptions[j].save();
+      }
+    }
+    utxo.ordinalsSlug = Bytes.fromUint8Array(utxo_ordinals.serialize());
+    utxo.save();
+  }
+
+  // Create transaction
+  let transaction_ = new Transaction(transaction.txid);
+  transaction_.idx = BigInt.fromI64(transaction.idx);
+  transaction_.amount = BigInt.fromI64(transaction.amount);
+  transaction_.fee = BigInt.zero();
+  transaction_.block = block.id;
+
   let runestone = transaction.rune;
   if (runestone !== null) {
     if (runestone.etching !== null) {
-      handleEtching(runestone.etching!, runestone);
+      const runeStoneTransaction = handleEtching(
+        runestone.etching!,
+        runestone,
+        transaction,
+        block.timestamp,
+        block.height
+      );
+      if (runeStoneTransaction !== null) {
+        transaction_.rune = runeStoneTransaction.rune;
+      }
     }
     if (runestone.mint !== null) {
-      handleMint(runestone.mint!, runestone);
+      const runeStoneTransaction = handleMint(
+        runestone.mint!,
+        runestone,
+        transaction,
+        block.timestamp,
+        block.height
+      );
+      if (runeStoneTransaction !== null) {
+        transaction_.rune = runeStoneTransaction.rune;
+      }
     }
     if (runestone.edicts !== null) {
       const edicts: Edict[] = runestone.edicts as Edict[];
       if (edicts.length > 0) {
-        handleEdicts(edicts, runestone);
+        const runeStoneTransaction = handleEdicts(
+          edicts,
+          runestone,
+          transaction,
+          block.timestamp,
+          block.height
+        );
+        if (runeStoneTransaction !== null) {
+          transaction_.rune = runeStoneTransaction.rune;
+        }
       }
     }
   }
-  // Load input UTXOs and ordinals
-  // log.debug("Loading input UTXOs", [])
-  // let input_utxos = loadUTXOs(transaction.inputUtxos);
-  // let input_ordinals: OrdinalSet = new OrdinalSet([]);
-  // for (let i = 0; i < input_utxos.length; ++i) {
-  //   let blocks = OrdinalSet.deserialize(input_utxos[i].ordinalsSlug);
-  //   input_ordinals.append_set(blocks);
+  transaction_.save();
 
-  //   // Mark UTXO as spent
-  //   input_utxos[i].unspent = false;
-  //   input_utxos[i].spentIn = transaction.txid;
-  //   input_utxos[i].save();
-  // }
-
-  // // Handle inscriptions
-  // // log.debug("Loading inscriptions", [])
-  // let inscriptions: Inscription[] = loadInscriptions(input_utxos);
-  // for (let insc = 0; insc < transaction.inscriptions.length; ++insc) {
-  //   let inscription = new Inscription(transaction.inscriptions[insc].id);
-  //   inscription.content_type = transaction.inscriptions[insc].contentType;
-  //   inscription.offset = BigInt.fromI64(transaction.inscriptions[insc].pointer);
-  //   inscription.parent = transaction.inscriptions[insc].parent;
-  //   inscription.metadata = transaction.inscriptions[insc].metadata;
-  //   inscription.metaprotocol = transaction.inscriptions[insc].metaprotocol;
-  //   inscription.contentEncoding =
-  //     transaction.inscriptions[insc].contentEncoding;
-  //   inscription.content = transaction.inscriptions[insc].content;
-  //   inscription.genesisTransaction = transaction.txid;
-  //   inscription.genesisAddress = transaction.relativeOrdinals[0].address;
-  //   inscription.ordinal = BigInt.fromU64(
-  //     input_ordinals.getNthOrdinal(transaction.inscriptions[insc].pointer)
-  //   );
-  //   inscription.genesisUtxo = getNthSatUtxo(
-  //     input_utxos,
-  //     transaction.inscriptions[insc].pointer
-  //   ).id;
-  //   inscriptions.push(inscription);
-  // }
-
-  // // Assign ordinals to output UTXOs
-  // // log.debug("Assigning ordinals to output UTXOs", [])
-  // for (let i = 0; i < transaction.relativeOrdinals.length; ++i) {
-  //   let utxo = new Utxo(transaction.relativeOrdinals[i].utxo);
-  //   utxo.address = transaction.relativeOrdinals[i].address;
-  //   utxo.amount = BigInt.fromU64(transaction.relativeOrdinals[i].size);
-  //   utxo.unspent = true;
-  //   utxo.transaction = transaction.txid;
-
-  //   let utxo_ordinals = input_ordinals.popNOrdinals(
-  //     transaction.relativeOrdinals[i].size
-  //   );
-  //   // Assign inscriptions to UTXO
-  //   for (let j = 0; j < inscriptions.length; ++j) {
-  //     if (utxo_ordinals.contains(inscriptions[j].ordinal.toU64())) {
-  //       inscriptions[j].location = utxo.id;
-  //       inscriptions[j].locationOffset = BigInt.fromU64(
-  //         utxo_ordinals.offsetOf(inscriptions[j].ordinal.toU64())
-  //       );
-  //       inscriptions[j].save();
-  //     }
-  //   }
-  //   utxo.ordinalsSlug = Bytes.fromUint8Array(utxo_ordinals.serialize());
-  //   utxo.save();
-  // }
-
-  // // Create transaction
-  // let transaction_ = new Transaction(transaction.txid);
-  // transaction_.idx = BigInt.fromI64(transaction.idx);
-  // transaction_.amount = BigInt.fromI64(transaction.amount);
-  // transaction_.fee = BigInt.zero();
-  // transaction_.block = block.id;
-  // transaction_.save();
-
-  // return input_ordinals;
+  return input_ordinals;
 }
 
 function handleCoinbaseTransaction(
